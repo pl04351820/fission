@@ -113,6 +113,8 @@ func (gpm *GenericPoolManager) service() {
 		req := <-gpm.requestChannel
 		switch req.requestType {
 		case GET_POOL:
+			// TODO : If the executor is stopped and started again, although an env n its pool is present in k8s cluster,
+			// just because they are missing in the cache, we end up creating another duplicate pool.
 			var err error
 			pool, ok := gpm.pools[crd.CacheKey(&req.env.Metadata)]
 			if !ok {
@@ -122,9 +124,16 @@ func (gpm *GenericPoolManager) service() {
 					poolsize = 1
 				}
 
+				// To support backward compatibility, if envs are created in default ns, we go ahead
+				// and create pools in fission-function ns as earlier.
+				ns := gpm.namespace
+				if req.env.Metadata.Namespace != metav1.NamespaceDefault {
+					ns = req.env.Metadata.Namespace
+				}
+
 				pool, err = MakeGenericPool(
 					gpm.fissionClient, gpm.kubernetesClient, req.env, poolsize,
-					gpm.namespace, gpm.fsCache, gpm.instanceId, gpm.enableIstio)
+					ns, gpm.namespace, gpm.fsCache, gpm.instanceId, gpm.enableIstio)
 				if err != nil {
 					req.responseChannel <- &response{error: err}
 					continue
@@ -133,15 +142,12 @@ func (gpm *GenericPoolManager) service() {
 			}
 			req.responseChannel <- &response{pool: pool}
 		case CLEANUP_POOLS:
-			latestEnvSet := make(map[string]bool)
 			latestEnvPoolsize := make(map[string]int)
 			for _, env := range req.envList {
-				latestEnvSet[crd.CacheKey(&env.Metadata)] = true
 				latestEnvPoolsize[crd.CacheKey(&env.Metadata)] = int(gpm.getEnvPoolsize(&env))
 			}
 			for key, pool := range gpm.pools {
-				_, ok := latestEnvSet[key]
-				poolsize := latestEnvPoolsize[key]
+				poolsize, ok := latestEnvPoolsize[key]
 				if !ok || poolsize == 0 {
 					// Env no longer exists or pool size changed to zero
 

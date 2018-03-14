@@ -781,7 +781,7 @@ func applyArchives(fclient *client.Client, specDir string, fr *FissionResources)
 
 	// get list of packages, make content-indexed map of available archives
 	availableArchives := make(map[string]string) // (sha256 -> url)
-	pkgs, err := fclient.PackageList()
+	pkgs, err := fclient.PackageList(metav1.NamespaceAll)
 	if err != nil {
 		return err
 	}
@@ -1031,7 +1031,7 @@ func waitForPackageBuild(fclient *client.Client, pkg *crd.Package) (*crd.Package
 
 func applyPackages(fclient *client.Client, fr *FissionResources, delete bool) (map[string]metav1.ObjectMeta, *resourceApplyStatus, error) {
 	// get list
-	allObjs, err := fclient.PackageList()
+	allObjs, err := fclient.PackageList(metav1.NamespaceAll)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1136,7 +1136,7 @@ func applyPackages(fclient *client.Client, fr *FissionResources, delete bool) (m
 
 func applyFunctions(fclient *client.Client, fr *FissionResources, delete bool) (map[string]metav1.ObjectMeta, *resourceApplyStatus, error) {
 	// get list
-	allObjs, err := fclient.FunctionList()
+	allObjs, err := fclient.FunctionList(metav1.NamespaceAll)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1219,7 +1219,7 @@ func applyFunctions(fclient *client.Client, fr *FissionResources, delete bool) (
 
 func applyEnvironments(fclient *client.Client, fr *FissionResources, delete bool) (map[string]metav1.ObjectMeta, *resourceApplyStatus, error) {
 	// get list
-	allObjs, err := fclient.EnvironmentList()
+	allObjs, err := fclient.EnvironmentList(metav1.NamespaceAll)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1302,7 +1302,7 @@ func applyEnvironments(fclient *client.Client, fr *FissionResources, delete bool
 
 func applyHTTPTriggers(fclient *client.Client, fr *FissionResources, delete bool) (map[string]metav1.ObjectMeta, *resourceApplyStatus, error) {
 	// get list
-	allObjs, err := fclient.HTTPTriggerList()
+	allObjs, err := fclient.HTTPTriggerList(metav1.NamespaceAll)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1385,7 +1385,7 @@ func applyHTTPTriggers(fclient *client.Client, fr *FissionResources, delete bool
 
 func applyKubernetesWatchTriggers(fclient *client.Client, fr *FissionResources, delete bool) (map[string]metav1.ObjectMeta, *resourceApplyStatus, error) {
 	// get list
-	allObjs, err := fclient.WatchList()
+	allObjs, err := fclient.WatchList(metav1.NamespaceAll)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1468,7 +1468,7 @@ func applyKubernetesWatchTriggers(fclient *client.Client, fr *FissionResources, 
 
 func applyTimeTriggers(fclient *client.Client, fr *FissionResources, delete bool) (map[string]metav1.ObjectMeta, *resourceApplyStatus, error) {
 	// get list
-	allObjs, err := fclient.TimeTriggerList()
+	allObjs, err := fclient.TimeTriggerList(metav1.NamespaceAll)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1551,7 +1551,7 @@ func applyTimeTriggers(fclient *client.Client, fr *FissionResources, delete bool
 
 func applyMessageQueueTriggers(fclient *client.Client, fr *FissionResources, delete bool) (map[string]metav1.ObjectMeta, *resourceApplyStatus, error) {
 	// get list
-	allObjs, err := fclient.MessageQueueTriggerList("")
+	allObjs, err := fclient.MessageQueueTriggerList("", metav1.NamespaceAll)
 	if err != nil {
 		return nil, nil, err
 	}

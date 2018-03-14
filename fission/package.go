@@ -33,14 +33,15 @@ import (
 	"github.com/fission/fission/crd"
 )
 
-func getFunctionsByPackage(client *client.Client, pkgName string) ([]crd.Function, error) {
-	fnList, err := client.FunctionList()
+// TODO : Verify this
+func getFunctionsByPackage(client *client.Client, pkgName, pkgNamespace string) ([]crd.Function, error) {
+	fnList, err := client.FunctionList(metav1.NamespaceAll)
 	if err != nil {
 		return nil, err
 	}
 	fns := []crd.Function{}
 	for _, fn := range fnList {
-		if fn.Spec.Package.PackageRef.Name == pkgName {
+		if fn.Spec.Package.PackageRef.Name == pkgName && fn.Spec.Package.PackageRef.Namespace == pkgNamespace {
 			fns = append(fns, fn)
 		}
 	}
@@ -65,11 +66,12 @@ func downloadStoragesvcURL(client *client.Client, fileUrl string) io.ReadCloser 
 func pkgCreate(c *cli.Context) error {
 	client := getClient(c.GlobalString("server"))
 
+	pkgNamespace := c.String("pkgNamespace")
 	envName := c.String("env")
 	if len(envName) == 0 {
 		fatal("Need --env argument.")
 	}
-
+	envNamespace := c.String("envNamespace")
 	srcArchiveName := c.String("src")
 	deployArchiveName := c.String("deploy")
 	buildcmd := c.String("buildcmd")
@@ -78,7 +80,7 @@ func pkgCreate(c *cli.Context) error {
 		fatal("Need --src to specify source archive, or use --deploy to specify deployment archive.")
 	}
 
-	meta := createPackage(client, envName, srcArchiveName, deployArchiveName, buildcmd, "")
+	meta := createPackage(client, pkgNamespace, envName, envNamespace, srcArchiveName, deployArchiveName, buildcmd, "")
 	fmt.Printf("Package '%v' created\n", meta.GetName())
 
 	return nil
@@ -91,9 +93,11 @@ func pkgUpdate(c *cli.Context) error {
 	if len(pkgName) == 0 {
 		fatal("Need --name argument.")
 	}
+	pkgNamespace := c.String("pkgNamespace")
 
 	force := c.Bool("f")
 	envName := c.String("env")
+	envNamespace := c.String("envNamespace")
 	srcArchiveName := c.String("src")
 	deployArchiveName := c.String("deploy")
 	buildcmd := c.String("buildcmd")
@@ -104,12 +108,12 @@ func pkgUpdate(c *cli.Context) error {
 	}
 
 	pkg, err := client.PackageGet(&metav1.ObjectMeta{
-		Namespace: metav1.NamespaceDefault,
+		Namespace: pkgNamespace,
 		Name:      pkgName,
 	})
 	checkErr(err, "get package")
 
-	fnList, err := getFunctionsByPackage(client, pkg.Metadata.Name)
+	fnList, err := getFunctionsByPackage(client, pkg.Metadata.Name, pkg.Metadata.Namespace)
 	checkErr(err, "get function list")
 
 	if !force && len(fnList) > 1 {
@@ -117,7 +121,7 @@ func pkgUpdate(c *cli.Context) error {
 	}
 
 	newPkgMeta := updatePackage(client, pkg,
-		envName, srcArchiveName, deployArchiveName, buildcmd)
+		envName, envNamespace, srcArchiveName, deployArchiveName, buildcmd)
 
 	// update resource version of package reference of functions that shared the same package
 	for _, fn := range fnList {
@@ -131,7 +135,7 @@ func pkgUpdate(c *cli.Context) error {
 	return nil
 }
 
-func updatePackage(client *client.Client, pkg *crd.Package, envName,
+func updatePackage(client *client.Client, pkg *crd.Package, envName, envNamespace,
 	srcArchiveName, deployArchiveName, buildcmd string) *metav1.ObjectMeta {
 
 	var srcArchiveMetadata, deployArchiveMetadata *fission.Archive
@@ -139,6 +143,7 @@ func updatePackage(client *client.Client, pkg *crd.Package, envName,
 
 	if len(envName) > 0 {
 		pkg.Spec.Environment.Name = envName
+		pkg.Spec.Environment.Namespace = envNamespace
 		needToBuild = true
 	}
 
@@ -158,6 +163,7 @@ func updatePackage(client *client.Client, pkg *crd.Package, envName,
 		pkg.Spec.Deployment = *deployArchiveMetadata
 	}
 
+	// TODO : Verify by doing a fn update with a source pkg, and see build status goes to pending.
 	// Set package as pending status only when there is no
 	// deploy archive.
 	if needToBuild && len(pkg.Spec.Deployment.Type) == 0 {
@@ -180,11 +186,12 @@ func pkgSourceGet(c *cli.Context) error {
 	if len(pkgName) == 0 {
 		fatal("Need name of package, use --name")
 	}
+	pkgNamespace := c.String("pkgNamespace")
 
 	output := c.String("output")
 
 	pkg, err := client.PackageGet(&metav1.ObjectMeta{
-		Namespace: metav1.NamespaceDefault,
+		Namespace: pkgNamespace,
 		Name:      pkgName,
 	})
 	if err != nil {
@@ -216,11 +223,12 @@ func pkgDeployGet(c *cli.Context) error {
 	if len(pkgName) == 0 {
 		fatal("Need name of package, use --name")
 	}
+	pkgNamespace := c.String("pkgNamespace")
 
 	output := c.String("output")
 
 	pkg, err := client.PackageGet(&metav1.ObjectMeta{
-		Namespace: metav1.NamespaceDefault,
+		Namespace: pkgNamespace,
 		Name:      pkgName,
 	})
 	if err != nil {
@@ -252,9 +260,10 @@ func pkgInfo(c *cli.Context) error {
 	if len(pkgName) == 0 {
 		fatal("Need name of package, use --name")
 	}
+	pkgNamespace := c.String("pkgNamespace")
 
 	pkg, err := client.PackageGet(&metav1.ObjectMeta{
-		Namespace: metav1.NamespaceDefault,
+		Namespace: pkgNamespace,
 		Name:      pkgName,
 	})
 	if err != nil {
@@ -275,8 +284,9 @@ func pkgList(c *cli.Context) error {
 	client := getClient(c.GlobalString("server"))
 	// option for the user to list all orphan packages (not referenced by any function)
 	listOrphans := c.Bool("orphan")
+	pkgNamespace := c.String("pkgNamespace")
 
-	pkgList, err := client.PackageList()
+	pkgList, err := client.PackageList(pkgNamespace)
 	if err != nil {
 		return err
 	}
@@ -285,7 +295,7 @@ func pkgList(c *cli.Context) error {
 	fmt.Fprintf(w, "%v\t%v\t%v\n", "NAME", "BUILD_STATUS", "ENV")
 	if listOrphans {
 		for _, pkg := range pkgList {
-			fnList, err := getFunctionsByPackage(client, pkg.Metadata.Name)
+			fnList, err := getFunctionsByPackage(client, pkg.Metadata.Name, pkg.Metadata.Namespace)
 			checkErr(err, fmt.Sprintf("get functions sharing package %s", pkg.Metadata.Name))
 			if len(fnList) == 0 {
 				fmt.Fprintf(w, "%v\t%v\t%v\n", pkg.Metadata.Name, pkg.Status.BuildStatus, pkg.Spec.Environment.Name)
@@ -303,18 +313,18 @@ func pkgList(c *cli.Context) error {
 	return nil
 }
 
-func deleteOrphanPkgs(client *client.Client) error {
-	pkgList, err := client.PackageList()
+func deleteOrphanPkgs(client *client.Client, pkgNamespace string) error {
+	pkgList, err := client.PackageList(pkgNamespace)
 	if err != nil {
 		return err
 	}
 
 	// range through all packages and find out the ones not referenced by any function
 	for _, pkg := range pkgList {
-		fnList, err := getFunctionsByPackage(client, pkg.Metadata.Name)
+		fnList, err := getFunctionsByPackage(client, pkg.Metadata.Name, pkgNamespace)
 		checkErr(err, fmt.Sprintf("get functions sharing package %s", pkg.Metadata.Name))
 		if len(fnList) == 0 {
-			err = deletePackage(client, pkg.Metadata.Name)
+			err = deletePackage(client, pkg.Metadata.Name, pkgNamespace)
 			if err != nil {
 				return err
 			}
@@ -323,9 +333,9 @@ func deleteOrphanPkgs(client *client.Client) error {
 	return nil
 }
 
-func deletePackage(client *client.Client, pkgName string) error {
+func deletePackage(client *client.Client, pkgName string, pkgNamespace string) error {
 	return client.PackageDelete(&metav1.ObjectMeta{
-		Namespace: metav1.NamespaceDefault,
+		Namespace: pkgNamespace,
 		Name:      pkgName,
 	})
 }
@@ -334,6 +344,7 @@ func pkgDelete(c *cli.Context) error {
 	client := getClient(c.GlobalString("server"))
 
 	pkgName := c.String("name")
+	pkgNamespace := c.String("pkgNamespace")
 	deleteOrphans := c.Bool("orphan")
 
 	if len(pkgName) == 0 && !deleteOrphans {
@@ -349,25 +360,25 @@ func pkgDelete(c *cli.Context) error {
 		force := c.Bool("f")
 
 		_, err := client.PackageGet(&metav1.ObjectMeta{
-			Namespace: metav1.NamespaceDefault,
+			Namespace: pkgNamespace,
 			Name:      pkgName,
 		})
 		checkErr(err, "find package")
 
-		fnList, err := getFunctionsByPackage(client, pkgName)
+		fnList, err := getFunctionsByPackage(client, pkgName, pkgNamespace)
 
 		if !force && len(fnList) > 0 {
 			fatal("Package is used by at least one function, use -f to force delete")
 		}
 
-		err = deletePackage(client, pkgName)
+		err = deletePackage(client, pkgName, pkgNamespace)
 		if err != nil {
 			return err
 		}
 
 		fmt.Printf("Package '%v' deleted\n", pkgName)
 	} else {
-		err := deleteOrphanPkgs(client)
+		err := deleteOrphanPkgs(client, pkgNamespace)
 		checkErr(err, "error deleting orphan packages")
 		fmt.Println("Orphan packages deleted")
 	}

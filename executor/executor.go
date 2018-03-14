@@ -125,7 +125,6 @@ func (executor *Executor) getFunctionExecutorType(meta *metav1.ObjectMeta) (fiss
 		return "", err
 	}
 	return fn.Spec.InvokeStrategy.ExecutionStrategy.ExecutorType, nil
-
 }
 
 func (executor *Executor) createServiceForFunction(meta *metav1.ObjectMeta) (*fscache.FuncSvc, error) {
@@ -227,6 +226,7 @@ func StartExecutor(fissionNamespace string, functionNamespace string, port int) 
 	cleanupObjects(kubernetesClient, functionNamespace, poolID)
 	go idleObjectReaper(kubernetesClient, fissionClient, fsCache, time.Minute*2)
 
+	// TODO : Come back and think of helm upgrades if we remove functionNamespace from these mgr objects.
 	gpm := poolmgr.MakeGenericPoolManager(
 		fissionClient, kubernetesClient,
 		functionNamespace, fsCache, poolID)

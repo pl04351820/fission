@@ -435,3 +435,12 @@ var errorDescriptions = []string{
 const (
 	ArchiveLiteralSizeLimit int64 = 256 * 1024
 )
+
+const (
+	FissionBuilderSA                 = "fission-builder"
+	FissionBuilderClusterRoleBinding = "fission-builder-crd"
+	ClusterAdminRole                 = "cluster-admin"
+
+	FissionFetcherSA                 = "fission-fetcher"
+	FissionFetcherClusterRoleBinding = "fission-fetcher-crd"
+)

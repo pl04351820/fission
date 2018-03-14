@@ -43,8 +43,8 @@ type (
 
 func makePackageWatcher(fissionClient *crd.FissionClient, getter k8sCache.Getter,
 	builderNamespace string, storageSvcUrl string) *packageWatcher {
-
-	lw := k8sCache.NewListWatchFromClient(getter, "pods", builderNamespace, fields.Everything())
+	// TODO : builderNs -> envNamespace ?
+	lw := k8sCache.NewListWatchFromClient(getter, "pods", metav1.NamespaceAll, fields.Everything())
 	store, controller := k8sCache.NewInformer(lw, &apiv1.Pod{}, 30*time.Second, k8sCache.ResourceEventHandlerFuncs{})
 	go controller.Run(make(chan struct{}))
 
@@ -118,8 +118,16 @@ func (pkgw *packageWatcher) build(buildCache *cache.Cache, pkg *crd.Package) {
 		for _, item := range items {
 			pod := item.(*apiv1.Pod)
 
+			// In order to support backward compatibility, for all builder images created in default env,
+			// the pods will be created in fission-builder namespace
+			ns := pkgw.builderNamespace
+			if env.Metadata.Namespace != metav1.NamespaceDefault {
+				ns = env.Metadata.Namespace
+			}
+
 			// Filter non-matching pods
 			if pod.ObjectMeta.Labels[LABEL_ENV_NAME] != env.Metadata.Name ||
+				pod.ObjectMeta.Labels[LABEL_ENV_NAMESPACE] != ns ||
 				pod.ObjectMeta.Labels[LABEL_ENV_RESOURCEVERSION] != env.Metadata.ResourceVersion {
 				continue
 			}
@@ -138,8 +146,7 @@ func (pkgw *packageWatcher) build(buildCache *cache.Cache, pkg *crd.Package) {
 				break
 			}
 
-			uploadResp, buildLogs, err := buildPackage(pkgw.fissionClient,
-				pkgw.builderNamespace, pkgw.storageSvcUrl, pkg)
+			uploadResp, buildLogs, err := buildPackage(pkgw.fissionClient, ns, pkgw.storageSvcUrl, pkg)
 			if err != nil {
 				log.Printf("Error building package %v: %v", pkg.Metadata.Name, err)
 				updatePackage(pkgw.fissionClient, pkg, fission.BuildStatusFailed, buildLogs, nil)
@@ -149,7 +156,7 @@ func (pkgw *packageWatcher) build(buildCache *cache.Cache, pkg *crd.Package) {
 			log.Printf("Start updating info of package: %v", pkg.Metadata.Name)
 
 			fnList, err := pkgw.fissionClient.
-				Functions(metav1.NamespaceDefault).List(metav1.ListOptions{})
+				Functions(metav1.NamespaceAll).List(metav1.ListOptions{})
 			if err != nil {
 				e := fmt.Sprintf("Error getting function list: %v", err)
 				log.Println(e)
@@ -196,7 +203,7 @@ func (pkgw *packageWatcher) build(buildCache *cache.Cache, pkg *crd.Package) {
 
 func (pkgw *packageWatcher) watchPackages() {
 	buildCache := cache.MakeCache(0, 0)
-	lw := k8sCache.NewListWatchFromClient(pkgw.fissionClient.GetCrdClient(), "packages", apiv1.NamespaceDefault, fields.Everything())
+	lw := k8sCache.NewListWatchFromClient(pkgw.fissionClient.GetCrdClient(), "packages", apiv1.NamespaceAll, fields.Everything())
 	_, controller := k8sCache.NewInformer(lw, &crd.Package{}, 60*time.Second, k8sCache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			pkg := obj.(*crd.Package)
