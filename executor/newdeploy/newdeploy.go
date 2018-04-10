@@ -66,8 +66,7 @@ func (deploy *NewDeploy) createOrGetDeployment(fn *crd.Function, env *crd.Enviro
 	}
 
 	if err != nil && k8s_err.IsNotFound(err) {
-		err = fission.SetupRBAC(deploy.kubernetesClient, fission.FissionFetcherSA, deployNamespace,
-			fission.FissionFetcherClusterRoleBinding, fission.ClusterAdminRole)
+		err := deploy.setupRBACObjs(deployNamespace, fn.Metadata.Name, fn.Metadata.Namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -88,6 +87,32 @@ func (deploy *NewDeploy) createOrGetDeployment(fn *crd.Function, env *crd.Enviro
 
 	return nil, err
 
+}
+
+func (deploy *NewDeploy) setupRBACObjs(deployNamespace, functionName, funcNamespace string) error {
+	// create fetcher SA in this ns, if not already created
+	_, err := fission.SetupSA(deploy.kubernetesClient, fission.FissionFetcherSA, deployNamespace)
+	if err != nil {
+		log.Printf("Error : %v creating %s in ns : %s for function: %s.%s", err, fission.FissionFetcherSA, deployNamespace, functionName, funcNamespace)
+		return err
+	}
+
+	// create a cluster role binding for the fetcher SA, if not already created, granting access to do a get on packages in any ns
+	fission.SetupClusterRoleBinding(deploy.kubernetesClient, fission.FissionFetcherSA, deployNamespace, fission.PackageGetterCRB, fission.PackageGetterCR)
+	if err != nil {
+		log.Printf("Error : %v creating %s clusterRoleBinding", err, fission.PackageGetterCRB)
+		return err
+	}
+
+	// create rolebinding in function namespace for fetcherSA.envNamespace to be able to get secrets and configmaps
+	err = fission.SetupRoleBinding(deploy.kubernetesClient, fission.GetSecretConfigMapRoleBinding, funcNamespace, fission.SecretConfigMapGetterCR, fission.ClusterRole, fission.FissionFetcherSA, deployNamespace)
+	if err != nil {
+		log.Printf("Error : %v creating %s clusterRoleBinding", err, fission.GetSecretConfigMapRoleBinding)
+		return err
+	}
+
+	log.Printf("Successfully set up all RBAC objects for function : %s.%s", functionName, funcNamespace)
+	return nil
 }
 
 func (deploy *NewDeploy) getDeployment(fn *crd.Function) (*v1beta1.Deployment, error) {

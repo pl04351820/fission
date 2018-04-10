@@ -152,12 +152,24 @@ func MakeGenericPool(
 	gp.fetcherImagePullPolicy = getImagePullPolicy(fetcherImagePullPolicy)
 	log.Printf("fetcher image: %v, pull policy: %v", gp.fetcherImage, gp.fetcherImagePullPolicy)
 
-	// setup RBAC
-	err := fission.SetupRBAC(gp.kubernetesClient, fission.FissionFetcherSA, gp.namespace,
-		fission.FissionFetcherClusterRoleBinding, fission.ClusterAdminRole)
+	// create fetcher SA in this ns, if not already created
+	_, err := fission.SetupSA(gp.kubernetesClient, fission.FissionFetcherSA, gp.namespace)
 	if err != nil {
+		log.Printf("Error : %v creating fetcher SA in ns : %s", err, gp.namespace)
 		return nil, err
 	}
+
+	// create a cluster role binding for the fetcher SA created above, granting access to do a
+	// get on packages in any ns
+	fission.SetupClusterRoleBinding(gp.kubernetesClient, fission.FissionFetcherSA, gp.namespace,
+		fission.PackageGetterCRB, fission.PackageGetterCR)
+	if err != nil {
+		log.Printf("Error : %v creating fission.PackageGetterCRB clusterRoleBinding", err)
+		return nil, err
+	}
+
+	log.Printf("Successfully created %s and %s for env: %s.%s", fission.FissionFetcherSA,
+		fission.PackageGetterCRB, gp.env.Metadata.Name, gp.namespace)
 
 	// Labels for generic deployment/RS/pods.
 	gp.labelsForPool = map[string]string{
@@ -479,10 +491,12 @@ func (gp *GenericPool) createPool() error {
 
 	// Use long terminationGracePeriodSeconds for connection draining in case that
 	// pod still runs user functions.
-	gracePeriodSeconds := int64(6 * 60)
-	if gp.env.Spec.TerminationGracePeriod > 0 {
-		gracePeriodSeconds = gp.env.Spec.TerminationGracePeriod
-	}
+	//gracePeriodSeconds := int64(6 * 60)
+	//if gp.env.Spec.TerminationGracePeriod > 0 {
+	//	gracePeriodSeconds = gp.env.Spec.TerminationGracePeriod
+	//}
+
+	gracePeriodSeconds := int64(0)
 
 	podAnnotation := make(map[string]string)
 
